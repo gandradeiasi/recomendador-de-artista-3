@@ -80,14 +80,26 @@
       }
       return items;
     }
+    function minimalTrack(track) {
+      return { id: track.id, artists: track.artists.map(a => ({ id: a.id })) };
+    }
     async function getSavedTracks() {
+      let saved = getWithExpiry("savedTracksData");
+      if (saved) return saved;
       const url = 'https://api.spotify.com/v1/me/tracks?limit=50';
-      const items = await fetchAll(url, 'Tracks salvas');
-      return items.map(item => item.track);
+      let items = await fetchAll(url, 'Tracks salvas');
+      let minimal = items.map(item => minimalTrack(item.track));
+      setWithExpiry("savedTracksData", minimal, 86400000);
+      return minimal;
     }
     async function getTopTracks() {
+      let top = getWithExpiry("topTracksData");
+      if (top) return top;
       const url = 'https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=long_term';
-      return await fetchAll(url, 'Top tracks');
+      let items = await fetchAll(url, 'Top tracks');
+      let minimal = items.map(track => minimalTrack(track));
+      setWithExpiry("topTracksData", minimal, 86400000);
+      return minimal;
     }
     async function getArtistsDetails(artistIds) {
       const chunks = [];
@@ -117,9 +129,7 @@
         if (track && track.artists) {
           track.artists.forEach(artist => {
             const details = artistDetailsMap[artist.id];
-            if (details && details.genres) {
-              details.genres.forEach(genre => { genreCounts[genre] = (genreCounts[genre] || 0) + 1; });
-            }
+            if (details && details.genres) { details.genres.forEach(genre => { genreCounts[genre] = (genreCounts[genre] || 0) + 1; }); }
           });
         }
       });
@@ -148,11 +158,8 @@
       link.target = '_blank';
       link.className = 'artist-card';
       const img = document.createElement('img');
-      if (artist.images && artist.images.length > 0) {
-        img.src = artist.images[artist.images.length - 1].url;
-      } else {
-        img.src = 'https://via.placeholder.com/120';
-      }
+      if (artist.images && artist.images.length > 0) { img.src = artist.images[artist.images.length - 1].url; }
+      else { img.src = 'https://via.placeholder.com/120'; }
       const name = document.createElement('div');
       name.textContent = artist.name;
       link.appendChild(img);
@@ -193,6 +200,11 @@
       }
       await paginateSearch('genre:' + genre);
       await paginateSearch('genre:"' + genre + '"');
+      if (container.childElementCount === 0) {
+        const msg = document.createElement('div');
+        msg.textContent = 'O algoritmo de busca do Spotify não favoreceu esse gênero, não encontramos nada :(';
+        container.appendChild(msg);
+      }
     }
     async function init() {
       try {
@@ -205,8 +217,6 @@
         const genreCounts = countGenres(savedTracks, artistDetailsMap);
         const sortedGenres = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
         displayGenres(sortedGenres);
-        setWithExpiry('artistas_proibidos', Array.from(forbiddenArtistsSet), 86400000);
-        setWithExpiry('generosRanking', sortedGenres, 86400000);
         document.getElementById('loading').style.display = 'none';
         updateProgress('Finalizado', 'Carregamento concluído');
         setTimeout(() => { document.getElementById('progress').style.display = 'none'; }, 2000);
