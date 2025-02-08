@@ -95,7 +95,7 @@
     async function getTopTracks() {
       let top = getWithExpiry("topTracksData");
       if (top) return top;
-      const url = 'https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=long_term';
+      const url = 'https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term ';
       let items = await fetchAll(url, 'Top tracks');
       let minimal = items.map(track => minimalTrack(track));
       setWithExpiry("topTracksData", minimal, 86400000);
@@ -202,7 +202,7 @@
       await paginateSearch('genre:"' + genre + '"');
       if (container.childElementCount === 0) {
         const msg = document.createElement('div');
-        msg.textContent = 'O algoritmo de busca do Spotify não favoreceu esse gênero, não encontramos nada :(';
+        msg.textContent = 'O mecanismo de busca do Spotify não encontrou nenhum artista em potencial com esse gênero :(';
         container.appendChild(msg);
       }
     }
