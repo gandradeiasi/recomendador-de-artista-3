@@ -18,6 +18,14 @@
     #app {
       padding: 20px;
     }
+    #loading {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #progress {
+      text-align: center;
+      margin-bottom: 10px;
+    }
     #genreList {
       list-style: none;
       padding: 0;
@@ -68,6 +76,7 @@
   <div id="app">
     <h1>Recomendador de Artistas</h1>
     <div id="loading">Carregando dados...</div>
+    <div id="progress"></div>
     <div id="genres" style="display:none;">
       <h2>Gêneros das suas músicas salvas</h2>
       <ul id="genreList"></ul>
@@ -75,6 +84,15 @@
     <div id="results"></div>
   </div>
   <script>
+    const progressMessages = {};
+    function updateProgress(key, message) {
+      progressMessages[key] = message;
+      renderProgress();
+    }
+    function renderProgress() {
+      const progressDiv = document.getElementById('progress');
+      progressDiv.innerHTML = Object.values(progressMessages).join('<br>');
+    }
     function setWithExpiry(key, value, ttl) {
       const now = new Date().getTime();
       const item = { value: value, expiry: now + ttl };
@@ -118,20 +136,29 @@
       }
       return response.json();
     }
-    async function fetchAll(url) {
+    async function fetchAll(url, progressKey) {
       let items = [];
-      while (url) {
+      while(url && items.length < 2000) {
         const data = await spotifyFetch(url);
         if (data.items) {
-          items = items.concat(data.items);
+          const remaining = 2000 - items.length;
+          if (data.items.length > remaining) {
+            items = items.concat(data.items.slice(0, remaining));
+          } else {
+            items = items.concat(data.items);
+          }
+          if (progressKey) {
+            updateProgress(progressKey, progressKey + ' - Itens carregados: ' + items.length);
+          }
         }
+        if(items.length >= 2000) break;
         url = data.next;
       }
       return items;
     }
     async function getSavedTracks() {
       const url = 'https://api.spotify.com/v1/me/tracks?limit=50';
-      const items = await fetchAll(url);
+      const items = await fetchAll(url, 'Tracks salvas');
       return items.map(item => item.track);
     }
     async function getTopTracks() {
@@ -145,10 +172,12 @@
         chunks.push(artistIds.slice(i, i + 50));
       }
       let artists = [];
-      for (const chunk of chunks) {
+      for (let j = 0; j < chunks.length; j++) {
+        const chunk = chunks[j];
         const url = 'https://api.spotify.com/v1/artists?ids=' + chunk.join(',');
         const data = await spotifyFetch(url);
         artists = artists.concat(data.artists);
+        updateProgress('Detalhes dos artistas', 'Detalhes dos artistas - Itens carregados: ' + artists.length);
       }
       return artists;
     }
@@ -297,6 +326,7 @@
         setWithExpiry('artistas_proibidos', Array.from(forbiddenArtistsSet), 86400000);
         setWithExpiry('generosRanking', sortedGenres, 86400000);
         document.getElementById('loading').style.display = 'none';
+        updateProgress('Finalizado', 'Carregamento concluído');
       } catch (error) {
         console.error('Erro na inicialização:', error);
         document.getElementById('loading').textContent = 'Erro ao carregar dados. Veja o console para detalhes.';
