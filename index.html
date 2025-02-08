@@ -95,23 +95,29 @@
     async function getTopTracks() {
       let top = getWithExpiry("topTracksData");
       if (top) return top;
-      const url = 'https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term ';
+      const url = 'https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=long_term';
       let items = await fetchAll(url, 'Top tracks');
       let minimal = items.map(track => minimalTrack(track));
       setWithExpiry("topTracksData", minimal, 86400000);
       return minimal;
     }
     async function getArtistsDetails(artistIds) {
-      const chunks = [];
-      for (let i = 0; i < artistIds.length; i += 50) { chunks.push(artistIds.slice(i, i + 50)); }
-      let artists = [];
-      for (let j = 0; j < chunks.length; j++) {
-        const url = 'https://api.spotify.com/v1/artists?ids=' + chunks[j].join(',');
-        const data = await spotifyFetch(url);
-        artists = artists.concat(data.artists);
-        updateProgress('Detalhes dos artistas', 'Detalhes dos artistas - Itens carregados: ' + artists.length);
+      let cachedArtists = getWithExpiry("artistsDetailsData") || {};
+      let missingIds = artistIds.filter(id => !cachedArtists.hasOwnProperty(id));
+      if (missingIds.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < missingIds.length; i += 50) {
+          chunks.push(missingIds.slice(i, i + 50));
+        }
+        for (let chunk of chunks) {
+          const url = 'https://api.spotify.com/v1/artists?ids=' + chunk.join(',');
+          const data = await spotifyFetch(url);
+          data.artists.forEach(artist => { cachedArtists[artist.id] = artist; });
+          updateProgress('Detalhes dos artistas', 'Detalhes dos artistas - Itens carregados: ' + Object.keys(cachedArtists).length);
+        }
+        setWithExpiry("artistsDetailsData", cachedArtists, 86400000);
       }
-      return artists;
+      return artistIds.map(id => cachedArtists[id]).filter(artist => artist != null);
     }
     function extractArtistIds(tracks) {
       const ids = new Set();
@@ -202,7 +208,7 @@
       await paginateSearch('genre:"' + genre + '"');
       if (container.childElementCount === 0) {
         const msg = document.createElement('div');
-        msg.textContent = 'O mecanismo de busca do Spotify não encontrou nenhum artista em potencial com esse gênero :(';
+        msg.textContent = 'O algoritmo de busca do Spotify não favoreceu esse gênero, não encontramos nada :(';
         container.appendChild(msg);
       }
     }
