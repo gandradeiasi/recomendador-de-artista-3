@@ -5,7 +5,6 @@
   <title>Recomendador de Artistas - Spotify</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    /* Estilos base – cores do Spotify */
     body {
       margin: 0;
       padding: 0;
@@ -58,7 +57,6 @@
       width: 100%;
       border-radius: 5px;
     }
-    /* Em telas pequenas, exibe 2 cards por linha */
     @media (max-width: 600px) {
       .artist-card {
         width: calc(50% - 10px);
@@ -70,27 +68,32 @@
   <div id="app">
     <h1>Recomendador de Artistas</h1>
     <div id="loading">Carregando dados...</div>
-    <!-- Seção dos gêneros (será preenchida após carregar as tracks) -->
     <div id="genres" style="display:none;">
       <h2>Gêneros das suas músicas salvas</h2>
       <ul id="genreList"></ul>
     </div>
-    <!-- Seção para os resultados (cards dos artistas) -->
     <div id="results"></div>
   </div>
-  
   <script>
-    /******************
-     * CONFIGURAÇÃO
-     ******************/
+    function setWithExpiry(key, value, ttl) {
+      const now = new Date().getTime();
+      const item = { value: value, expiry: now + ttl };
+      localStorage.setItem(key, JSON.stringify(item));
+    }
+    function getWithExpiry(key) {
+      const itemStr = localStorage.getItem(key);
+      if (!itemStr) return null;
+      const item = JSON.parse(itemStr);
+      const now = new Date().getTime();
+      if (now > item.expiry) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      return item.value;
+    }
     const clientId = 'cdbe0b644b984a6e98839e352d87bb3d';
     const redirectUri = 'https://gandradeiasi.github.io/recomendador-de-artista-3/';
     const scopes = 'user-top-read user-library-read';
-
-    /******************
-     * AUTENTICAÇÃO
-     ******************/
-    // Verifica se há token de acesso na URL; caso contrário, redireciona para a autorização
     function getAccessToken() {
       const hash = window.location.hash.substring(1);
       const params = new URLSearchParams(hash);
@@ -99,31 +102,22 @@
     }
     function redirectToAuth() {
       const authEndpoint = 'https://accounts.spotify.com/authorize';
-      const url = `${authEndpoint}?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}`;
+      const url = authEndpoint + '?client_id=' + clientId + '&redirect_uri=' + encodeURIComponent(redirectUri) + '&response_type=token&scope=' + encodeURIComponent(scopes);
       window.location = url;
     }
     const accessToken = getAccessToken();
     if (!accessToken) {
       redirectToAuth();
     }
-
-    /******************
-     * FUNÇÕES AUXILIARES
-     ******************/
-    // Realiza uma requisição à API do Spotify utilizando o token
     async function spotifyFetch(url) {
       const response = await fetch(url, {
-        headers: {
-          'Authorization': 'Bearer ' + accessToken
-        }
+        headers: { 'Authorization': 'Bearer ' + accessToken }
       });
       if (!response.ok) {
-        throw new Error(`Erro na requisição: ${response.status}`);
+        throw new Error('Erro na requisição: ' + response.status);
       }
       return response.json();
     }
-
-    // Busca todos os itens (paginação) a partir de uma URL que contenha "next"
     async function fetchAll(url) {
       let items = [];
       while (url) {
@@ -135,24 +129,16 @@
       }
       return items;
     }
-
-    /******************
-     * BUSCAS INICIAIS
-     ******************/
-    // Busca as tracks salvas do usuário
     async function getSavedTracks() {
       const url = 'https://api.spotify.com/v1/me/tracks?limit=50';
       const items = await fetchAll(url);
-      // Cada item possui a propriedade "track"
       return items.map(item => item.track);
     }
-    // Busca as top tracks do usuário (utilizando time_range=medium_term como aproximação do "último ano")
     async function getTopTracks() {
       const url = 'https://api.spotify.com/v1/me/top/tracks?limit=50&time_range=medium_term';
       const data = await spotifyFetch(url);
       return data.items;
     }
-    // Busca detalhes (incluindo gêneros) de vários artistas de uma vez (máximo 50 por chamada)
     async function getArtistsDetails(artistIds) {
       const chunks = [];
       for (let i = 0; i < artistIds.length; i += 50) {
@@ -160,14 +146,12 @@
       }
       let artists = [];
       for (const chunk of chunks) {
-        const url = `https://api.spotify.com/v1/artists?ids=${chunk.join(',')}`;
+        const url = 'https://api.spotify.com/v1/artists?ids=' + chunk.join(',');
         const data = await spotifyFetch(url);
         artists = artists.concat(data.artists);
       }
       return artists;
     }
-    
-    // Extrai os IDs de artistas de um array de tracks
     function extractArtistIds(tracks) {
       const ids = new Set();
       tracks.forEach(track => {
@@ -177,11 +161,6 @@
       });
       return Array.from(ids);
     }
-
-    /******************
-     * PROCESSAMENTO DOS DADOS
-     ******************/
-    // Cria um mapa (id -> artista) a partir de um array de artistas
     function createArtistDetailsMap(artistsArray) {
       const map = {};
       artistsArray.forEach(artist => {
@@ -189,7 +168,6 @@
       });
       return map;
     }
-    // Conta os gêneros, percorrendo as tracks salvas; cada vez que um artista (de uma track) possui um gênero, soma um ponto.
     function countGenres(savedTracks, artistDetailsMap) {
       const genreCounts = {};
       savedTracks.forEach(track => {
@@ -206,7 +184,6 @@
       });
       return genreCounts;
     }
-    // Computa os artistas proibidos: os que aparecem tanto nas tracks salvas quanto nas top tracks.
     function computeForbiddenArtists(savedTracks, topTracks) {
       const savedSet = new Set();
       savedTracks.forEach(track => {
@@ -228,31 +205,23 @@
       });
       return intersection;
     }
-
-    /******************
-     * EXIBIÇÃO NA TELA
-     ******************/
-    // Exibe os gêneros em uma lista; cada linha é clicável para iniciar a busca dos artistas daquele gênero.
     function displayGenres(sortedGenres) {
       const genreList = document.getElementById('genreList');
       genreList.innerHTML = '';
       sortedGenres.forEach(([genre, count]) => {
         const li = document.createElement('li');
-        li.textContent = `${genre} (${count})`;
+        li.textContent = genre + ' (' + count + ')';
         li.addEventListener('click', () => {
-          // Ao clicar, inicia a busca de artistas para esse gênero
           searchArtistsByGenre(genre);
         });
         genreList.appendChild(li);
       });
       document.getElementById('genres').style.display = 'block';
     }
-    // Cria um card para exibir um artista (foto e nome)
     function createArtistCard(artist) {
       const card = document.createElement('div');
       card.className = 'artist-card';
       const img = document.createElement('img');
-      // Se existir imagem, usa a primeira; caso contrário, usa um placeholder
       if (artist.images && artist.images.length > 0) {
         img.src = artist.images[0].url;
       } else {
@@ -264,59 +233,41 @@
       card.appendChild(name);
       return card;
     }
-
-    /******************
-     * BUSCA DE ARTISTAS POR GÊNERO
-     ******************/
-    // Quando o usuário clica em um gênero, essa função efetua duas buscas (com query "genre:xxx" e 'genre:"xxx"')
-    // e pagina os resultados. Apenas artistas que tenham o gênero (literal) e que não estejam na lista de proibidos são exibidos.
     async function searchArtistsByGenre(genre) {
-      // Cria (ou limpa) uma seção para os resultados deste gênero
-      let section = document.getElementById(`section-${genre}`);
+      let section = document.getElementById('section-' + genre);
       if (!section) {
         section = document.createElement('div');
         section.className = 'genre-section';
-        section.id = `section-${genre}`;
+        section.id = 'section-' + genre;
         const title = document.createElement('h3');
-        title.textContent = `Artistas do gênero: ${genre}`;
+        title.textContent = 'Artistas do gênero: ' + genre;
         section.appendChild(title);
         const container = document.createElement('div');
         container.className = 'cards-container';
-        container.id = `cards-${genre}`;
+        container.id = 'cards-' + genre;
         section.appendChild(container);
         document.getElementById('results').appendChild(section);
       } else {
-        document.getElementById(`cards-${genre}`).innerHTML = '';
+        document.getElementById('cards-' + genre).innerHTML = '';
       }
-      
-      const container = document.getElementById(`cards-${genre}`);
-      // Use a variável global "artistas_proibidos" (conjunto com IDs) já definida
+      const container = document.getElementById('cards-' + genre);
       const forbidden = window.artistas_proibidos || new Set();
-      const seenArtists = new Set(); // Para evitar duplicatas
-
-      // Função para processar os artistas retornados e exibir os cards se atenderem aos critérios
+      const seenArtists = new Set();
       function processArtists(items) {
         items.forEach(artist => {
-          if (
-            artist.genres && 
-            artist.genres.includes(genre) && 
-            !forbidden.has(artist.id) &&
-            !seenArtists.has(artist.id)
-          ) {
+          if (artist.genres && artist.genres.includes(genre) && !forbidden.has(artist.id) && !seenArtists.has(artist.id)) {
             seenArtists.add(artist.id);
             const card = createArtistCard(artist);
             container.appendChild(card);
           }
         });
       }
-
-      // Função que pagina os resultados de uma query de busca
       async function paginateSearch(query) {
         let offset = 0;
         const limit = 50;
         let total = 0;
         do {
-          const searchUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=${limit}&offset=${offset}`;
+          const searchUrl = 'https://api.spotify.com/v1/search?q=' + encodeURIComponent(query) + '&type=artist&limit=' + limit + '&offset=' + offset;
           try {
             const data = await spotifyFetch(searchUrl);
             const artistsData = data.artists;
@@ -329,48 +280,28 @@
           }
         } while (offset < total);
       }
-
-      // Realiza as buscas com os dois formatos de query
-      await paginateSearch(`genre:${genre}`);
-      await paginateSearch(`genre:"${genre}"`);
+      await paginateSearch('genre:' + genre);
+      await paginateSearch('genre:"' + genre + '"');
     }
-
-    /******************
-     * FUNÇÃO PRINCIPAL
-     ******************/
     async function init() {
       try {
-        // Busca as tracks salvas e as top tracks (do último período)
-        const [savedTracks, topTracks] = await Promise.all([
-          getSavedTracks(), 
-          getTopTracks()
-        ]);
-
-        // Define os artistas proibidos: os que aparecem em ambos os conjuntos
-        window.artistas_proibidos = computeForbiddenArtists(savedTracks, topTracks);
-
-        // Para extrair os gêneros, buscamos os detalhes dos artistas das tracks salvas
+        const [savedTracks, topTracks] = await Promise.all([getSavedTracks(), getTopTracks()]);
+        const forbiddenArtistsSet = computeForbiddenArtists(savedTracks, topTracks);
+        window.artistas_proibidos = forbiddenArtistsSet;
         const savedArtistIds = extractArtistIds(savedTracks);
         const artistsDetails = await getArtistsDetails(savedArtistIds);
         const artistDetailsMap = createArtistDetailsMap(artistsDetails);
-
-        // Conta os gêneros baseados nas tracks salvas (cada ocorrência de um artista soma pontos para os gêneros dele)
         const genreCounts = countGenres(savedTracks, artistDetailsMap);
-
-        // Ordena os gêneros por frequência (decrescente)
         const sortedGenres = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
-
-        // Exibe os gêneros na tela
         displayGenres(sortedGenres);
-
+        setWithExpiry('artistas_proibidos', Array.from(forbiddenArtistsSet), 86400000);
+        setWithExpiry('generosRanking', sortedGenres, 86400000);
         document.getElementById('loading').style.display = 'none';
       } catch (error) {
         console.error('Erro na inicialização:', error);
         document.getElementById('loading').textContent = 'Erro ao carregar dados. Veja o console para detalhes.';
       }
     }
-    
-    // Inicia a aplicação
     init();
   </script>
 </body>
